@@ -1,6 +1,6 @@
 [package]
 name = "trad-data"
-version = "1.10.0"
+version = "1.10.1"
 edition = "2021"
 description = "TradingAgents skill: installer + data fetcher (Rust binary)"
 license = "Apache-2.0"

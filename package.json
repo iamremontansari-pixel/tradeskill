@@ -1,6 +1,6 @@
 {
   "name": "trad-skill",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "Installable TradingAgents multi-agent stock-analysis skill + Rust data tool (bunx/npx; installer + stock/news/fundamentals/sentiment/fund CLI)",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/halfoffive/trad-skill.git" },
@@ -33,10 +33,10 @@
     "windsurf"
   ],
   "optionalDependencies": {
-    "@trad-skill/win32-x64": "1.10.0",
-    "@trad-skill/win32-arm64": "1.10.0",
-    "@trad-skill/darwin-arm64": "1.10.0",
-    "@trad-skill/linux-x64": "1.10.0",
-    "@trad-skill/linux-arm64": "1.10.0"
+    "@trad-skill/win32-x64": "1.10.1",
+    "@trad-skill/win32-arm64": "1.10.1",
+    "@trad-skill/darwin-arm64": "1.10.1",
+    "@trad-skill/linux-x64": "1.10.1",
+    "@trad-skill/linux-arm64": "1.10.1"
   }
 }

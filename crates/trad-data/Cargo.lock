@@ -1315,7 +1315,7 @@ dependencies = [
 
 [[package]]
 name = "trad-data"
-version = "1.10.0"
+version = "1.10.1"
 dependencies = [
  "anyhow",
  "chrono",
