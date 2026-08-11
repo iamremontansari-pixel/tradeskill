@@ -199,6 +199,68 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 测试注入：记录一个 tmp_dir 路径，`attempt_swap` 遇到相同路径时伪造"目标已存在"
+/// 的 AlreadyExists，供 `test_install_atomic_rollback` 确定性触发回滚路径。
+/// 按路径匹配而非全局开关，避免与并行运行的其他 install 测试互相干扰。
+/// 仅测试构建存在；生产构建中该标志与相关分支均不编译。
+#[cfg(test)]
+static FORCE_SWAP_FAIL: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+
+/// swap 阶段执行 rename(tmp_dir → dest_dir)。
+///
+/// 真实文件系统上无法确定性构造"两个 rename 之间目标被非空目录占用"的状态
+/// （第二步执行前 dest 已被第一步移走；Windows 上目标已存在非空目录即失败），
+/// 因此回滚路径由测试注入触发：`FORCE_SWAP_FAIL` 记录本测试的 tmp_dir 路径后，
+/// 本函数伪造 `ErrorKind::AlreadyExists`，与 Windows 上"rename 覆盖非空目录"
+/// 的真实错误同型。
+fn attempt_swap(tmp_dir: &Path, dest_dir: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    {
+        let mut guard = FORCE_SWAP_FAIL.lock().unwrap();
+        if guard.as_ref().is_some_and(|p| p == tmp_dir) {
+            *guard = None;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("注入失败：目标目录已存在 {}", dest_dir.display()),
+            ));
+        }
+    }
+    fs::rename(tmp_dir, dest_dir)
+}
+
+/// 交换安装目录：③ 旧目录改名备份 → ④ 新目录换名就位 → ⑤ 全部成功后才清理备份。
+///
+/// 若 ④ 失败（磁盘满、权限、杀软锁、测试注入），回滚把备份恢复为 dest_dir，
+/// 旧安装保持完好；回滚自身失败只打印警告，不掩盖原始错误。
+fn swap_dirs(tmp_dir: &Path, dest_dir: &Path, backup_dir: &Path) -> Result<()> {
+    // ③ 旧目录改名备份
+    if dest_dir.exists() {
+        fs::rename(dest_dir, backup_dir)
+            .with_context(|| format!("备份旧安装失败：{}", dest_dir.display()))?;
+    }
+    // ④ 新目录换名就位
+    if let Err(e) = attempt_swap(tmp_dir, dest_dir) {
+        // 回滚：恢复旧安装，避免留下空目标目录
+        if backup_dir.exists() {
+            if let Err(rollback_err) = fs::rename(backup_dir, dest_dir) {
+                eprintln!(
+                    "⚠ 回滚失败：旧安装仍在 {}（{}",
+                    backup_dir.display(),
+                    rollback_err
+                );
+            }
+        }
+        // 清理临时目录，避免残留
+        let _ = fs::remove_dir_all(tmp_dir);
+        return Err(e).context(format!("技能文件就位失败：{}", dest_dir.display()));
+    }
+    // ⑤ 全部成功后才删备份（二进制已随 tmp_dir 一并就位）
+    if backup_dir.exists() {
+        let _ = fs::remove_dir_all(backup_dir); // 备份清理失败仅留残留，不阻断安装
+    }
+    Ok(())
+}
+
 /// 安装入口
 pub fn run(args: InstallArgs) -> Result<()> {
     // 1. 解析源技能目录
@@ -262,8 +324,9 @@ pub fn run(args: InstallArgs) -> Result<()> {
 
     // 5. 真正安装：幂等 + 数据安全。
     //    - 目标已存在但缺 SKILL.md → 不是本技能安装，拒绝删除（防误删用户目录）
-    //    - 先复制到同目录临时目录，旧目录改名备份，新目录换名就位后再删备份。
-    //      中途失败（磁盘满、权限、杀软锁）不会破坏上一次的可用安装。
+    //    - 流程：① 技能文件与平台二进制都复制到同目录临时目录；② 旧目录改名备份；
+    //      ③ 新目录换名就位；④ 全部成功后才删备份。任一步失败（磁盘满、权限、
+    //      杀软锁、--bin-path 无效）时 dest_dir 都不动，上一次的可用安装完整保留。
     fs::create_dir_all(&parent_dir)
         .with_context(|| format!("创建父目录失败：{}", parent_dir.display()))?;
     if dest_dir.exists() && !dest_dir.join("SKILL.md").is_file() {
@@ -278,68 +341,45 @@ pub fn run(args: InstallArgs) -> Result<()> {
         fs::remove_dir_all(&tmp_dir)
             .with_context(|| format!("清理残留临时目录失败：{}", tmp_dir.display()))?;
     }
+
+    // ① 技能文件 → tmp_dir
     copy_dir_recursive(&skills_src, &tmp_dir).context("复制技能文件失败")?;
+
+    // ② 平台二进制 → tmp_dir/bin/<node_key>/trad-skill[.exe]
+    //    必须在 swap 之前完成：复制失败（权限、杀软锁、--bin-path 无效）时直接中止，
+    //    dest_dir 未被触碰，旧安装完整保留。
+    if !args.no_bin {
+        let b = bin_src
+            .as_ref()
+            .ok_or_else(|| anyhow!("无法确定平台二进制路径"))?;
+        if !b.exists() {
+            let _ = fs::remove_dir_all(&tmp_dir);
+            bail!(
+                "找不到平台二进制：{}。安装已中止，目标目录未改动，原有安装保持不变。",
+                b.display()
+            );
+        }
+        let tmp_platform_dir = tmp_dir.join("bin").join(&node_key);
+        if let Err(e) = fs::create_dir_all(&tmp_platform_dir)
+            .and_then(|_| fs::copy(b, tmp_platform_dir.join(&bin_name)))
+        {
+            let _ = fs::remove_dir_all(&tmp_dir);
+            return Err(e).context(format!("复制平台二进制失败：{}", b.display()));
+        }
+    }
+
+    // ③ 旧目录改名备份 → ④ 新目录换名就位 → ⑤ 成功后清理备份（swap_dirs 内含回滚）
     let backup_dir = parent_dir.join(format!(".{SKILL_NAME}.old-{}", std::process::id()));
-    if dest_dir.exists() {
-        fs::rename(&dest_dir, &backup_dir)
-            .with_context(|| format!("备份旧安装失败：{}", dest_dir.display()))?;
-    }
-    if let Err(e) = fs::rename(&tmp_dir, &dest_dir) {
-        // 回滚：恢复旧安装，避免留下空目标目录
-        if backup_dir.exists() {
-            if let Err(rollback_err) = fs::rename(&backup_dir, &dest_dir) {
-                eprintln!(
-                    "⚠ 回滚失败：旧安装仍在 {}（{}",
-                    backup_dir.display(),
-                    rollback_err
-                );
-            }
-        }
-        // 清理临时目录，避免残留
-        let _ = fs::remove_dir_all(&tmp_dir);
-        return Err(e).context(format!("技能文件就位失败：{}", dest_dir.display()));
-    }
-    if backup_dir.exists() {
-        let _ = fs::remove_dir_all(&backup_dir); // 备份清理失败仅留残留，不阻断安装
-    }
+    swap_dirs(&tmp_dir, &dest_dir, &backup_dir)?;
 
-    let dest_bin = dest_dir.join("bin");
-
-    // 6. 复制平台二进制到 bin/<platform>/trad-skill[.exe]
-    let bin_installed = if !args.no_bin {
-        fs::create_dir_all(&dest_bin)?;
-        if let Some(b) = &bin_src {
-            if b.exists() {
-                let dest_platform_dir = dest_bin.join(&node_key);
-                fs::create_dir_all(&dest_platform_dir)?;
-                fs::copy(b, dest_platform_dir.join(&bin_name))
-                    .with_context(|| format!("复制平台二进制失败：{}", b.display()))?;
-                true
-            } else {
-                eprintln!("⚠ 找不到平台二进制：{}（数据工具不可用）", b.display());
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    // 7. 打印结果。未指定 --no-bin 但二进制没装上 → 安装不完整，以非零码失败
-    if !bin_installed && !args.no_bin {
-        eprintln!("错误: 平台二进制未安装（--bin-path 文件不存在或复制失败）。");
-        eprintln!("  技能文件已就位，但数据工具不可用。可移除无效的 --bin-path 后重试：");
-        eprintln!("  bunx trad-skill@latest install");
-        return Err(anyhow!("平台二进制未安装"));
-    }
+    // 6. 打印结果。二进制已随 tmp_dir 一并就位，仅 --no-bin 时未装
     println!("✓ 已安装 {SKILL_NAME} → {}", dest_dir.display());
     println!();
     println!("下一步：");
-    if bin_installed {
-        println!("  ✓ trad-skill 二进制已安装 ({node_key})");
-    } else {
+    if args.no_bin {
         println!("  ⚠ 数据二进制未安装（--no-bin），可改用 `bunx trad-skill@latest <子命令>` 调用数据工具。");
+    } else {
+        println!("  ✓ trad-skill 二进制已安装 ({node_key})");
     }
     println!("  1. 重启你的 AI agent / 开一个新会话，让它加载该技能。");
     println!("  2. 触发分析，例如：\"分析 AAPL\" 或 \"Analyze 600519\" 。");
@@ -493,6 +533,93 @@ mod tests {
             err.to_string().contains("二进制"),
             "应报告二进制未安装: {err}"
         );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn test_install_bin_copy_failure_preserves_old() {
+        // TDD 用例(H3):bin 复制失败时旧安装必须原样保留。
+        // 旧实现先 swap 再复制二进制:bin_path 无效时,旧安装已被新技能文件
+        // 替换且备份被删除 → 本测试应失败(旧 SKILL.md / 旧 bin 丢失)。
+        let root = std::env::temp_dir().join("trad-skill-install-bin-copy-fail");
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::create_dir_all(&root).unwrap();
+        let src = make_skill_src(&root);
+        let target = root.join("target");
+        let dest = target.join(SKILL_NAME);
+        // 预置旧安装:SKILL.md + 旧平台二进制
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("SKILL.md"), "# OLD INSTALL").unwrap();
+        let old_bin = dest
+            .join("bin")
+            .join(node_platform_key())
+            .join(format!("trad-skill{}", bin_ext()));
+        std::fs::create_dir_all(old_bin.parent().unwrap()).unwrap();
+        std::fs::write(&old_bin, "old binary bytes").unwrap();
+        // bin_path 指向不存在的文件 → 二进制复制必然失败
+        let args = InstallArgs {
+            dir: Some(target.to_str().unwrap().to_string()),
+            skills_dir: Some(src.to_str().unwrap().to_string()),
+            bin_path: Some(root.join("nonexistent-bin").to_str().unwrap().to_string()),
+            no_bin: false,
+            ..default_install_args()
+        };
+        let err = run(args).unwrap_err();
+        assert!(
+            err.to_string().contains("二进制"),
+            "应报告二进制问题: {err}"
+        );
+        // 旧安装原样保留:SKILL.md 与旧 bin 都可读
+        assert_eq!(
+            std::fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "# OLD INSTALL"
+        );
+        assert_eq!(std::fs::read(&old_bin).unwrap(), b"old binary bytes");
+        // 无残留 tmp 目录
+        let tmp_dir = target.join(format!(".{SKILL_NAME}.tmp-{}", std::process::id()));
+        assert!(!tmp_dir.exists(), "失败后不应残留 tmp 目录");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn test_install_atomic_rollback() {
+        // swap(tmp→dest) 失败时必须回滚：旧安装恢复为 dest_dir。
+        // 注入方式：置位 FORCE_SWAP_FAIL（test-only 静态标志），attempt_swap 会伪造
+        // ErrorKind::AlreadyExists —— 与 Windows 上"rename 覆盖已存在非空目录"的真实
+        // 失败同型（见 attempt_swap 注释：真实文件系统无法确定性构造两步 rename 之间
+        // 目标被占用的状态）。若删掉 swap_dirs 里的回滚分支，本测试立即失败。
+        let root = std::env::temp_dir().join("trad-skill-install-rollback");
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::create_dir_all(&root).unwrap();
+        let src = make_skill_src(&root);
+        let target = root.join("target");
+        let dest = target.join(SKILL_NAME);
+        // 预置旧安装
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("SKILL.md"), "# OLD INSTALL").unwrap();
+        std::fs::write(dest.join("old-file.txt"), "old data").unwrap();
+
+        let tmp_dir = target.join(format!(".{SKILL_NAME}.tmp-{}", std::process::id()));
+        // 注入：只有本次安装的 tmp_dir 会命中，并行跑的其他 install 测试不受影响
+        *FORCE_SWAP_FAIL.lock().unwrap() = Some(tmp_dir.clone());
+        let err = run(install_args(
+            target.to_str().unwrap(),
+            src.to_str().unwrap(),
+        ))
+        .unwrap_err();
+        *FORCE_SWAP_FAIL.lock().unwrap() = None; // 兜底复位（正常路径在 attempt_swap 内已消费）
+        assert!(
+            err.to_string().contains("就位失败"),
+            "应报告 swap 失败: {err}"
+        );
+        // 回滚生效：旧安装恢复为 dest_dir，backup 无残留
+        assert_eq!(
+            std::fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "# OLD INSTALL"
+        );
+        assert!(dest.join("old-file.txt").exists());
+        let backup_dir = target.join(format!(".{SKILL_NAME}.old-{}", std::process::id()));
+        assert!(!backup_dir.exists(), "回滚后 backup 应已恢复回 dest");
         std::fs::remove_dir_all(&root).ok();
     }
 
