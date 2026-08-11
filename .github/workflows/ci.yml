@@ -194,7 +194,12 @@ jobs:
       - name: Verify musl binary is statically linked
         if: contains(matrix.target, 'musl')
         run: |
-          file crates/trad-data/target/${{ matrix.target }}/release/trad-skill | grep -q "statically linked" || (echo "::error::musl binary not static" && exit 1)
+          # rustc 对 x86_64 musl 默认产出 "static-pie linked"（static_position_independent_executables=true），
+          # aarch64 musl 产出 "statically linked" —— 两种都是静态，都要接受。
+          # 失败时输出 file 实际结果，便于诊断。
+          out="$(file crates/trad-data/target/${{ matrix.target }}/release/trad-skill)"
+          echo "$out"
+          echo "$out" | grep -qE "static-pie linked|statically linked" || (echo "::error::musl binary not static: $out" && exit 1)
 
       # Native-runnable targets only (linux-gnu on ubuntu, windows on windows,
       # darwin on macos); cross targets (aarch64-linux/musl, aarch64-windows)
