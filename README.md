@@ -266,6 +266,8 @@ trad-skill/                        # repo root (meta files + installer)
 | Baostock | A-shares | Historical data | Free |
 | TDX (通达信) | A-shares | Technical indicators | Free |
 
+> Note: Alpha Vantage, FRED, Polymarket, Tushare, Baostock, and TDX are listed for historical/provenance purposes; the trad-skill binary uses Yahoo Finance + Eastmoney directly. See [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md) for the wired-in sources and fallback strategies.
+
 See [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md) for the full catalog with fallback strategies.
 
 ---

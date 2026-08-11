@@ -4,7 +4,7 @@
 **When to use**: Invoked in the Analyst stage when the target is an A-share fund (公募基金/ETF/LOF).
 **Pipeline stage**: Analyst (fund-specific)
 
-**Template variables**: {ticker} (6-digit fund code), {current_date}, {instrument_context} (Market: A股基金; Ticker: <code>; Trade date: <date>), {tool_names} (web-search by fund name; for ETFs only, trad-skill news --symbol <ticker> MAY work).
+**Template variables**: {ticker} (6-digit fund code).
 
 ## Prompt
 

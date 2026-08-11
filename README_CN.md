@@ -269,6 +269,8 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
 | Baostock | A股历史数据 | 免费 |
 | 通达信 TDX | 技术指标 | 免费 |
 
+> 注意：Alpha Vantage、FRED、Polymarket、Tushare、Baostock 和 TDX 仅作为历史/出处参考列出；trad-skill 二进制直接使用 Yahoo Finance 与东方财富（Eastmoney）。详见 [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md) 了解实际接入的数据源与回退策略。
+
 详见 [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md)。
 
 ---

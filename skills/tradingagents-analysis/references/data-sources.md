@@ -35,7 +35,7 @@ Complete catalog of data sources used in the TradingAgents multi-agent analysis 
 ### StockTwits
 - **Provides**: Retail trader sentiment messages with Bullish/Bearish tags
 - **API Key**: Not required (public API)
-- **Markets**: US stocks (by cashtag)
+- **Markets**: US stocks + Crypto (by cashtag)
 - **Used by**: Sentiment Analyst
 - **Signal**: Bullish/Bearish ratio as leading retail-sentiment indicator
 
@@ -53,7 +53,7 @@ Complete catalog of data sources used in the TradingAgents multi-agent analysis 
 - **API Key**: Required (TUSHARE_TOKEN)
 - **Markets**: China A-shares (Shanghai .SS, Shenzhen .SZ)
 - **Used by**: China Market Analyst, Fundamentals Analyst (not wired into the `trad-skill` binary; agent uses web search fallback)
-- **Priority**: Primary for A-shares
+- **Priority**: Not wired — historical priority in the TradingAgents-CN fork only
 
 ### AKShare
 - **Provides**: A股 real-time quotes, historical data, financial indicators, stock comments
@@ -89,7 +89,7 @@ Complete catalog of data sources used in the TradingAgents multi-agent analysis 
 
 ## China Fund Sources (公募基金/ETF/LOF)
 
-All four fund endpoints are Eastmoney APIs, wired into the `trad-skill fund` subcommand. Agents may also hit them directly via web search/browser fallback. **All four endpoints return GBK-encoded bodies** (despite response headers claiming `charset=utf-8`) — decode as GBK before parsing.
+All four fund endpoints are Eastmoney APIs, wired into the `trad-skill fund` subcommand. Agents may also hit them directly via web search/browser fallback. Historically returned GBK despite utf-8 headers; as of 2026-08-08 endpoints return UTF-8 (headers truthful). Decode UTF-8 first, fall back to GBK.
 
 ### Eastmoney Fund NAV History
 - **Endpoint**: `api.fund.eastmoney.com/f10/lsjz` (JSON)

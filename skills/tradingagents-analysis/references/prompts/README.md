@@ -37,10 +37,10 @@ Analysts (parallel) → Research Debate (sequential) → Decision → Risk Debat
 
 ### Analyst Stage (parallel)
 - **Market Analyst**: Technical analysis using up to 8 complementary indicators (SMA, EMA, MACD, RSI, Bollinger, ATR, VWMA, MFI)
-- **Sentiment Analyst**: Multi-source sentiment (Yahoo Finance news + StockTwits + Reddit) with structured output
+- **Sentiment Analyst**: Multi-source social sentiment (StockTwits + Reddit) with structured output
 - **News Analyst**: Macro/news research using FRED data, prediction markets, and global news
-- **Fundamentals Analyst**: Financial statements, balance sheet, cash flow, income statement analysis
-- **China Market Analyst** (CN): A-share/HK-specific analysis (Tushare referenced in the verbatim prompt but not wired — the trad-skill binary uses Eastmoney), T+1 rules, price limits
+- **Fundamentals Analyst**: Compact key-metrics table + company profile (via trad-skill fundamentals; full statements distilled)
+- **China Market Analyst** (CN): A-share/HK-specific analysis (TDX/通达信 referenced in the verbatim prompt but not wired — the trad-skill binary uses Eastmoney), T+1 rules, price limits
 - **CN News Analyst** (CN): Chinese financial news analysis with timeliness and impact assessment
 - **Fund Market Analyst** (fund): NAV-based market analysis for A-share funds (公募基金/ETF/LOF), covering unit/cumulative NAV trends, NAV growth volatility, benchmark-relative performance (沪深300), drawdowns, and scale effects. Data source: `trad-skill fund`.
 - **Fund Sentiment Analyst** (fund): Fund-specific sentiment from 申购/赎回 status (SGZT/SHZT), institutional holdings changes, and holder sentiment inferred from subscription/redemption limits. Data source: `trad-skill fund`.
