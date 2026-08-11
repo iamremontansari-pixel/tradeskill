@@ -1321,6 +1321,7 @@ dependencies = [
  "chrono",
  "clap",
  "encoding_rs",
+ "hyper",
  "quick-xml",
  "reqwest",
  "serde",
