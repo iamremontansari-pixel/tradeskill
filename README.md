@@ -94,7 +94,7 @@ mkdir -p ~/.claude/skills/tradingagents-analysis/references/prompts
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/data-sources.md -o ~/.claude/skills/tradingagents-analysis/references/data-sources.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/indicators.md -o ~/.claude/skills/tradingagents-analysis/references/indicators.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/README.md -o ~/.claude/skills/tradingagents-analysis/references/prompts/README.md
-for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst; do
+for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst fund_market_analyst fund_sentiment_analyst fund_news_analyst fund_fundamentals_analyst; do
   curl -sL "https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/${f}.md" -o ~/.claude/skills/tradingagents-analysis/references/prompts/${f}.md
 done
 ```
@@ -229,7 +229,7 @@ trad-skill/                        # repo root (meta files + installer)
     └── tradingagents-analysis/    # the installable skill
         ├── SKILL.md               # Core skill instructions (pipeline, orchestration, output format)
         └── references/
-            ├── prompts/           # 14 verbatim agent role prompts
+            ├── prompts/           # 18 verbatim agent role prompts
             │   ├── market_analyst.md
             │   ├── sentiment_analyst.md
             │   ├── news_analyst.md
@@ -244,6 +244,10 @@ trad-skill/                        # repo root (meta files + installer)
             │   ├── portfolio_manager.md
             │   ├── china_market_analyst.md
             │   ├── cn_news_analyst.md
+            │   ├── fund_market_analyst.md
+            │   ├── fund_sentiment_analyst.md
+            │   ├── fund_news_analyst.md
+            │   ├── fund_fundamentals_analyst.md
             │   └── README.md
             ├── data-sources.md    # Data source catalog (US + CN markets)
             └── indicators.md      # Technical indicator reference

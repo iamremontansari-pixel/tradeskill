@@ -90,7 +90,7 @@ mkdir -p ~/.claude/skills/tradingagents-analysis/references/prompts
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/data-sources.md -o ~/.claude/skills/tradingagents-analysis/references/data-sources.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/indicators.md -o ~/.claude/skills/tradingagents-analysis/references/indicators.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/README.md -o ~/.claude/skills/tradingagents-analysis/references/prompts/README.md
-for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst; do
+for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst fund_market_analyst fund_sentiment_analyst fund_news_analyst fund_fundamentals_analyst; do
   curl -sL "https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/${f}.md" -o ~/.claude/skills/tradingagents-analysis/references/prompts/${f}.md
 done
 ```
@@ -225,7 +225,7 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
     └── tradingagents-analysis/    # 可安装的技能
         ├── SKILL.md               # 核心技能指令文件
         └── references/
-            ├── prompts/               # 14个智能体角色提示词
+            ├── prompts/               # 18个智能体角色提示词
             │   ├── market_analyst.md       # 市场分析师
             │   ├── sentiment_analyst.md    # 情绪分析师
             │   ├── news_analyst.md         # 新闻分析师
@@ -240,6 +240,10 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
             │   ├── portfolio_manager.md    # 投资组合经理
             │   ├── china_market_analyst.md # 中国市场分析师
             │   ├── cn_news_analyst.md      # 中文新闻分析师
+            │   ├── fund_market_analyst.md       # 基金市场分析师
+            │   ├── fund_sentiment_analyst.md    # 基金情绪分析师
+            │   ├── fund_news_analyst.md         # 基金新闻分析师
+            │   ├── fund_fundamentals_analyst.md # 基金基本面分析师
             │   └── README.md               # 提示词索引
             ├── data-sources.md         # 数据源目录（美股+A股+港股）
             └── indicators.md           # 技术指标参考
