@@ -1,6 +1,6 @@
 {
   "name": "@trad-skill/darwin-arm64",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "trad-skill binary for macOS ARM64 (Apple Silicon)",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/halfoffive/trad-skill.git" },

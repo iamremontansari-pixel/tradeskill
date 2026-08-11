@@ -57,7 +57,7 @@ bunx trad-skill@latest --dry-run           # print the install plan without writ
 
 ### Data tool without installing
 
-The same binary also exposes `stock` / `news` / `fundamentals` / `sentiment` subcommands. Run them directly via `bunx` (or `npx`) without installing the skill — handy for one-off data fetches:
+The same binary also exposes `stock` / `news` / `fundamentals` / `sentiment` / `fund` subcommands. Run them directly via `bunx` (or `npx`) without installing the skill — handy for one-off data fetches:
 
 ```bash
 bunx trad-skill@latest stock --symbol AAPL
@@ -94,7 +94,7 @@ mkdir -p ~/.claude/skills/tradingagents-analysis/references/prompts
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/data-sources.md -o ~/.claude/skills/tradingagents-analysis/references/data-sources.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/indicators.md -o ~/.claude/skills/tradingagents-analysis/references/indicators.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/README.md -o ~/.claude/skills/tradingagents-analysis/references/prompts/README.md
-for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst; do
+for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst fund_market_analyst fund_sentiment_analyst fund_news_analyst fund_fundamentals_analyst; do
   curl -sL "https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/${f}.md" -o ~/.claude/skills/tradingagents-analysis/references/prompts/${f}.md
 done
 ```
@@ -229,7 +229,7 @@ trad-skill/                        # repo root (meta files + installer)
     └── tradingagents-analysis/    # the installable skill
         ├── SKILL.md               # Core skill instructions (pipeline, orchestration, output format)
         └── references/
-            ├── prompts/           # 14 verbatim agent role prompts
+            ├── prompts/           # 18 verbatim agent role prompts
             │   ├── market_analyst.md
             │   ├── sentiment_analyst.md
             │   ├── news_analyst.md
@@ -244,6 +244,10 @@ trad-skill/                        # repo root (meta files + installer)
             │   ├── portfolio_manager.md
             │   ├── china_market_analyst.md
             │   ├── cn_news_analyst.md
+            │   ├── fund_market_analyst.md
+            │   ├── fund_sentiment_analyst.md
+            │   ├── fund_news_analyst.md
+            │   ├── fund_fundamentals_analyst.md
             │   └── README.md
             ├── data-sources.md    # Data source catalog (US + CN markets)
             └── indicators.md      # Technical indicator reference
@@ -266,13 +270,15 @@ trad-skill/                        # repo root (meta files + installer)
 | Baostock | A-shares | Historical data | Free |
 | TDX (通达信) | A-shares | Technical indicators | Free |
 
+> Note: Alpha Vantage, FRED, Polymarket, Tushare, Baostock, and TDX are listed for historical/provenance purposes; the trad-skill binary uses Yahoo Finance + Eastmoney directly. See [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md) for the wired-in sources and fallback strategies.
+
 See [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md) for the full catalog with fallback strategies.
 
 ---
 
 ## Data Tool (`trad-skill`)
 
-Data is fetched by the `trad-skill` Rust binary, which provides market data (OHLCV + indicators), news, fundamentals, and sentiment in a single compact output suitable for LLM prompt injection. Platform binaries are distributed as the five `@trad-skill/<platform>` npm packages (installed as optional dependencies), and the thin launcher `bin/trad-skill.js` resolves the correct one at runtime. The same binary handles both install and data subcommands.
+Data is fetched by the `trad-skill` Rust binary, which provides market data (OHLCV + indicators), news, fundamentals, sentiment, and fund data in a single compact output suitable for LLM prompt injection. Platform binaries are distributed as the five `@trad-skill/<platform>` npm packages (installed as optional dependencies), and the thin launcher `bin/trad-skill.js` resolves the correct one at runtime. The same binary handles both install and data subcommands.
 
 > The agent must run `trad-skill` by its **absolute path** inside the installed skill directory (e.g. `~/.agents/skills/tradingagents-analysis/bin/<platform>/trad-skill`), because a sub-agent's working directory is the user's project, not the skill folder. The skill's `SKILL.md` instructs the main agent to resolve that path before spawning analysts.
 
@@ -317,7 +323,7 @@ trad-skill news --symbol 0700.HK         # HK news via Eastmoney
 | `news` | `--limit 8`, 200-char summaries | `--limit N`, `--days N` |
 | `fundamentals` | compact key-metrics table | — |
 | `sentiment` | `--limit 15`, `--days 7` (Reddit), 8 messages/posts shown | `--limit N`, `--days N` |
-| `fund` | 公募基金/ETF/LOF：净值历史 + 基金资料 + 重仓股 + 业绩表现（东方财富） | `trad-skill fund --symbol 000001 --tail 30` |
+| `fund` | 公募基金/ETF/LOF：净值历史 + 基金资料 + 重仓股 + 业绩表现（东方财富） | `--tail`, `--days` |
 
 `stock --source` selects the data channel: by default US/Crypto use Yahoo Finance and A-shares/HK use Eastmoney, auto-detected from the symbol. Pass `--source eastmoney` to route US stocks through Eastmoney (handy when Yahoo is region-blocked), or `--source yahoo` to force Yahoo (A-share/HK symbols are mapped to `.SS`/`.SZ`/`.HK`). Eastmoney does not serve crypto.
 

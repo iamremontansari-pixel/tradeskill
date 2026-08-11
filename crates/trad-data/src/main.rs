@@ -263,8 +263,9 @@ async fn main() -> anyhow::Result<()> {
             days,
             limit,
         }) => {
-            if limit == 0 {
-                exit_with(2, "错误: --limit 必须 ≥ 1");
+            // --limit 限制在 [1, 1000]，避免单源单次抓取输出巨量新闻
+            if limit == 0 || limit > 1000 {
+                exit_with(2, "错误: --limit 必须在 1-1000 之间");
             }
             match news::fetch_news(&client, &symbol, days, limit).await {
                 Ok(out) => println!("{}", out),
@@ -276,8 +277,9 @@ async fn main() -> anyhow::Result<()> {
             limit,
             days,
         }) => {
-            if limit == 0 {
-                exit_with(2, "错误: --limit 必须 ≥ 1");
+            // --limit 限制在 [1, 1000]，避免单源单次抓取输出巨量帖子
+            if limit == 0 || limit > 1000 {
+                exit_with(2, "错误: --limit 必须在 1-1000 之间");
             }
             match sentiment::fetch_sentiment(&client, &symbol, limit, days).await {
                 Ok(out) => println!("{}", out),
@@ -291,6 +293,8 @@ async fn main() -> anyhow::Result<()> {
                 exit_with(2, "错误: 基金代码必须为 6 位纯数字");
             }
             let tail = tail.clamp(1, 365);
+            // --days 限制在 [1, 3650]（10 年上限），避免超大值产生远古起始日期
+            let days = days.clamp(1, 3650);
             match fund::fetch_fund(&client, s, tail, days).await {
                 Ok(out) => println!("{}", out),
                 Err(e) => exit_with(1, &e),

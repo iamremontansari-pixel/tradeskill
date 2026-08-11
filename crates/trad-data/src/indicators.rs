@@ -74,35 +74,61 @@ fn ema_alpha(data: &[f64], alpha: f64) -> Vec<f64> {
     result
 }
 
+/// 带删除的 Welford 在线统计器（窗口均值 + 平方偏差和 M2）。
+///
+/// 相对 sum/sum_sq 增量法的优势：不直接累计 `x²`，避免大数级序列上
+/// `sum_sq - mean²·n` 的 catastrophic cancellation。
+#[derive(Default)]
+struct Welford {
+    n: usize,
+    mean: f64,
+    m2: f64,
+}
+
+impl Welford {
+    /// 加入一个新值（在线 Welford 更新）。
+    fn add(&mut self, x: f64) {
+        self.n += 1;
+        let delta = x - self.mean;
+        self.mean += delta / self.n as f64;
+        self.m2 += delta * (x - self.mean);
+    }
+
+    /// 移除一个旧值（逆 Welford 更新；保证 n 先于 mean/m2 递减）。
+    fn remove(&mut self, x: f64) {
+        self.n -= 1;
+        let delta = x - self.mean;
+        self.mean -= delta / self.n as f64;
+        self.m2 -= delta * (x - self.mean);
+    }
+
+    /// 总体标准差（ddof=0）；浮点噪声下 M2 可能为微小负值，用 max(0.0) 兜底。
+    fn population_std(&self) -> f64 {
+        (self.m2 / self.n as f64).max(0.0).sqrt()
+    }
+}
+
 /// 计算 rolling std（总体标准差，ddof=0）
 ///
-/// 增量维护 sum 与 sum_sq，把 O(n·period) 降到 O(n)。浮点减法可能让
-/// sum_sq - mean²·period 出现微小负值，用 max(0.0) 兜底。
+/// 用带删除的 Welford 在线算法维护窗口均值与平方偏差和，把 O(n·period)
+/// 降到 O(n)，同时避免 sum/sum_sq 增量法在大数级序列上的
+/// catastrophic cancellation（输出 0/负数）。仍保留 max(0.0) 兜底。
 fn rolling_std(data: &[f64], period: usize) -> Vec<f64> {
     let mut result = vec![f64::NAN; data.len()];
     if data.len() < period {
         return result;
     }
-    let mut sum = 0.0;
-    let mut sum_sq = 0.0;
+    let mut w = Welford::default();
     for &val in data.iter().take(period) {
-        sum += val;
-        sum_sq += val * val;
+        w.add(val);
     }
-    result[period - 1] = window_std(sum, sum_sq, period);
+    result[period - 1] = w.population_std();
     for i in period..data.len() {
-        sum += data[i] - data[i - period];
-        sum_sq += data[i] * data[i] - data[i - period] * data[i - period];
-        result[i] = window_std(sum, sum_sq, period);
+        w.add(data[i]);
+        w.remove(data[i - period]);
+        result[i] = w.population_std();
     }
     result
-}
-
-/// 由窗口 sum/sum_sq 计算总体标准差
-fn window_std(sum: f64, sum_sq: f64, period: usize) -> f64 {
-    let mean = sum / period as f64;
-    let variance = (sum_sq / period as f64 - mean * mean).max(0.0);
-    variance.sqrt()
 }
 
 /// 计算 rolling mean
@@ -541,6 +567,34 @@ mod tests {
     fn test_ema_empty() {
         let result = ema(&[], 3);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_rolling_std_large_values() {
+        // 大数级序列（~1e6）叠加微小波动：sum/sum_sq 增量法因 catastrophic
+        // cancellation 会把方差算成 0 或负数；Welford 应输出 > 0 且与直算一致。
+        let base = 1_000_000.0;
+        let data: Vec<f64> = (0..1000)
+            .map(|i| base + ((i % 5) as f64 - 2.0) * 0.001)
+            .collect();
+        let result = rolling_std(&data, 20);
+        for i in 19..data.len() {
+            let window = &data[i + 1 - 20..=i];
+            let mean = window.iter().sum::<f64>() / 20.0;
+            let variance = window.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / 20.0;
+            let expected = variance.sqrt();
+            assert!(
+                result[i] > 0.0,
+                "窗口 {i} 输出非正: {}（catastrophic cancellation）",
+                result[i]
+            );
+            assert!(
+                (result[i] - expected).abs() < 1e-6,
+                "窗口 {i} 与直算不符: {} vs {}",
+                result[i],
+                expected
+            );
+        }
     }
 
     #[test]

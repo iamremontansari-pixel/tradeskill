@@ -69,7 +69,8 @@ fn strip_html(html: &str) -> String {
 }
 
 /// 解码常见 HTML 实体。`&` 后 15 个字符内无 `;` 视作字面 `&`。
-fn decode_html_entities(s: &str) -> String {
+/// `pub(crate)` 供 fund.rs 的 strip_tags 复用（公司名 `A &amp; B` → `A & B`）。
+pub(crate) fn decode_html_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -325,6 +326,18 @@ fn parse_google_news_rss(xml: &str, query: &str, days: u32, limit: u32) -> Strin
                     _ => {}
                 }
             }
+            // Google News 把 <description> 包在 CDATA 里，quick-xml 产生 Event::CData。
+            // CDATA 内容是原始文本（实体不在此层转义，`&amp;`/`&nbsp;` 等由下游 strip_html
+            // 的 decode_html_entities 解码），直接按 UTF-8 取字节即可。
+            Ok(Event::CData(ref e)) => {
+                let text = String::from_utf8_lossy(e).into_owned();
+                match current_tag.as_str() {
+                    "title" => current_title.push_str(&text),
+                    "source" => current_source.push_str(&text),
+                    "description" => current_desc.push_str(&text),
+                    _ => {}
+                }
+            }
             Ok(Event::End(ref e)) => {
                 if e.name().as_ref() == b"item" {
                     in_item = false;
@@ -490,12 +503,15 @@ async fn fetch_eastmoney_news(
 }
 
 /// 剥离 JSONP 包装：jQuery...({...}) → {...}
+///
+/// 以 JSON 大括号锚定：取 `cb(` 之后的第一个 `{`（JSON 起点）与最后一个 `}`（JSON
+/// 终点），而非首 `(` / 末 `)`——JSON 字符串值内的括号（如 `"内容)"`）或 JSON
+/// 之后的附加参数（`, 42)`）会干扰括号定位，把垃圾卷进 JSON 导致解析失败。
 fn strip_jsonp(text: &str) -> String {
     let trimmed = text.trim();
-    // 找到第一个 '(' 和最后一个 ')'
-    if let (Some(start), Some(end)) = (trimmed.find('('), trimmed.rfind(')')) {
+    if let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) {
         if start < end {
-            return trimmed[start + 1..end].to_string();
+            return trimmed[start..=end].to_string();
         }
     }
     trimmed.to_string()
@@ -591,9 +607,21 @@ mod tests {
     #[test]
     fn test_strip_jsonp() {
         assert_eq!(strip_jsonp("jQuery({\"a\":1})"), "{\"a\":1}");
-        assert_eq!(strip_jsonp("callback(data)"), "data");
+        // 非 JSON 包装（无大括号）原样返回——JSONP 一定包 JSON 对象
+        assert_eq!(strip_jsonp("callback(data)"), "callback(data)");
         assert_eq!(strip_jsonp("noparens"), "noparens");
         assert_eq!(strip_jsonp(""), "");
+    }
+
+    #[test]
+    fn test_strip_jsonp_with_paren_in_content() {
+        // JSON 字符串值内含 `)`，且 JSONP 包装在 JSON 之后还有附加参数：
+        // 旧实现按首 `(` / 末 `)` 截取会把 `, 42)` 卷进 JSON，导致解析失败。
+        let input = r#"jQuery1123({"content":"(重磅) 今日要闻)"}, 42)"#;
+        assert_eq!(strip_jsonp(input), r#"{"content":"(重磅) 今日要闻)"}"#);
+        // 双括号收尾形态：旧实现 rfind(')') 命中最外层，把多出的 `)` 卷进 JSON
+        let double = r#"cb({"title":"value)"})"#;
+        assert_eq!(strip_jsonp(double), r#"{"title":"value)"}"#);
     }
 
     #[test]
@@ -611,6 +639,53 @@ mod tests {
         assert!(item.contains("**Title**"));
         assert!(item.contains("Source"));
         assert!(item.contains("Summary text"));
+    }
+
+    // Google News RSS 的 <description> 包裹在 CDATA 中，quick-xml 产生 Event::CData 而非
+    // Event::Text。修复前 CDATA 内容被忽略、description 为空（summary 缺失）。
+    #[test]
+    fn test_parse_google_news_cdata_description() {
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Google News</title>
+<item>
+<title>Apple stock rises on earnings beat</title>
+<source url="https://www.example.com">Example News</source>
+<description><![CDATA[<a href="https://www.example.com/apple">Apple &amp; Google shares climbed</a>&nbsp;&nbsp;<font color="#6f6f6f">Example News</font>]]></description>
+<pubDate>Tue, 11 Aug 2026 10:00:00 GMT</pubDate>
+</item>
+</channel></rss>"##;
+        let out = parse_google_news_rss(xml, "AAPL", 7, 8);
+        // CDATA 内容应进入 description，剥标签 + 解码实体后含链接文本
+        assert!(
+            out.contains("Apple & Google shares climbed"),
+            "CDATA 描述应被解析: {}",
+            out
+        );
+        assert!(
+            out.contains("Apple stock rises on earnings beat"),
+            "标题应保留: {}",
+            out
+        );
+    }
+
+    // 非 CDATA 的纯文本 <description> 仍应可解析（回归保护）。
+    #[test]
+    fn test_parse_google_news_text_description() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Google News</title>
+<item>
+<title>Apple stock rises</title>
+<source url="https://www.example.com">Example News</source>
+<description>Apple shares climbed on strong earnings</description>
+</item>
+</channel></rss>"#;
+        let out = parse_google_news_rss(xml, "AAPL", 7, 8);
+        assert!(
+            out.contains("Apple shares climbed"),
+            "Text 描述应被解析: {}",
+            out
+        );
+        assert!(out.contains("Apple stock rises"), "标题应保留: {}", out);
     }
 
     #[test]

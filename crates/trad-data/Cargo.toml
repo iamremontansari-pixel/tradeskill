@@ -1,6 +1,6 @@
 [package]
 name = "trad-data"
-version = "1.10.0"
+version = "1.10.1"
 edition = "2021"
 description = "TradingAgents skill: installer + data fetcher (Rust binary)"
 license = "Apache-2.0"
@@ -24,6 +24,9 @@ anyhow = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# 仅测试用：构造带自定义流式响应体（impl hyper::body::Body）的 reqwest::Response，
+# 模拟无 Content-Length 的 chunked 传输。纯 Rust，无 C 依赖，兼容全部 7 个构建目标。
+hyper = "1"
 
 [profile.release]
 strip = true

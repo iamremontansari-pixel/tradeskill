@@ -6,8 +6,8 @@
 //! `news.rs`（quoteSummary）复用。
 use crate::http::get_with_retry_headers;
 use reqwest::Client;
-use std::sync::Mutex;
 use std::time::Instant;
+use tokio::sync::Mutex;
 
 /// 浏览器 User-Agent：Yahoo 会封锁非浏览器 UA（尤其数据中心 IP），
 /// 所有 Yahoo 请求必须携带真实浏览器 UA。
@@ -17,18 +17,15 @@ pub const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 const CRUMB_TTL_SECS: u64 = 3600;
 
 /// 进程级 crumb 缓存：批量抓多个 symbol 时只握手一次（每次握手 2 个请求）。
-/// 含时间戳用于 TTL 过期判断；带 crumb 请求失败时调用方应 `invalidate_crumb_cache()`，
+/// 用 `tokio::sync::Mutex` 串行化整个「查缓存 → TTL 过期则刷新」流程，避免
+/// 并发任务同时发现过期而各自握手（TOCTOU 双取）；tokio Mutex 允许在持有锁
+/// 时 `.await` 握手。带 crumb 请求失败时调用方应 `invalidate_crumb_cache()`，
 /// 让后续请求重新握手。
-static CRUMB_CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
-
-fn crumb_cache() -> std::sync::MutexGuard<'static, Option<(String, Instant)>> {
-    // 锁中毒（panic 后）视为空缓存，不 panic
-    CRUMB_CACHE.lock().unwrap_or_else(|p| p.into_inner())
-}
+static CRUMB_CACHE: Mutex<Option<(String, Instant)>> = Mutex::const_new(None);
 
 /// 清除 crumb 缓存（带 crumb 请求连续失败时调用，让下一个请求重新握手）
-pub fn invalidate_crumb_cache() {
-    *crumb_cache() = None;
+pub async fn invalidate_crumb_cache() {
+    *CRUMB_CACHE.lock().await = None;
 }
 
 /// 获取 Yahoo Finance crumb token（yfinance 底层反爬握手）
@@ -38,17 +35,19 @@ pub fn invalidate_crumb_cache() {
 /// 任一步失败返回 None（调用方仍可尝试无 crumb 请求）。
 /// 成功后写入进程级缓存（含 TTL）；`invalidate_crumb_cache` 清空。
 pub async fn get_crumb(client: &Client) -> Option<String> {
-    // 缓存命中且未过期直接返回，避免每个 symbol 都做两次握手请求
-    if let Some((c, ts)) = crumb_cache().clone() {
+    // 整个「缓存命中检查 → 过期则刷新」都在锁内完成：并发调用者排队，
+    // 同一时刻只有一个任务执行握手，其余调用直接拿到同一个 fresh crumb。
+    let mut cache = CRUMB_CACHE.lock().await;
+    if let Some((c, ts)) = cache.clone() {
         if ts.elapsed().as_secs() < CRUMB_TTL_SECS {
             return Some(c);
         }
         // TTL 过期，清除并重新握手
-        *crumb_cache() = None;
+        *cache = None;
     }
     let crumb = get_crumb_fresh(client).await;
     if crumb.is_some() {
-        *crumb_cache() = crumb.clone().map(|c| (c, Instant::now()));
+        *cache = crumb.clone().map(|c| (c, Instant::now()));
     }
     crumb
 }
@@ -145,7 +144,7 @@ pub async fn yahoo_get_body(client: &Client, url: &str) -> Result<String, String
         .map_err(|e| format!("读取响应失败: {}", e))?;
     if body_has_yahoo_error(&body) {
         // 带 crumb 仍返回错误体：crumb 可能已轮换/失效，清除缓存让下一次重新握手
-        invalidate_crumb_cache();
+        invalidate_crumb_cache().await;
         return Err("Yahoo Finance 返回错误响应（可能仍被区域封锁）".to_string());
     }
     Ok(body)

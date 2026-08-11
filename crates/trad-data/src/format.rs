@@ -50,7 +50,8 @@ pub fn build_compact_report(
 
     sections.push(format!("## 最近 {} 行 OHLCV\n", tail_data.len()));
     sections.push("```csv".to_string());
-    sections.push(ohlcv_to_csv(tail_data));
+    // ohlcv_to_csv 末尾带 \n，这里 trim 掉避免代码块内出现空行
+    sections.push(ohlcv_to_csv(tail_data).trim_end().to_string());
     sections.push("```\n".to_string());
 
     sections.join("\n")
@@ -63,6 +64,7 @@ pub fn build_compact_report(
 /// 数值用 Rust 的 `{}`（最短往返表示）：API 字符串解析出的 f64 打印出来
 /// 与原文一致（1363.02 → "1363.02"），不会出现 Python repr 式的
 /// "100.30000000000001"；volume 同样不四舍五入——加密币成交量可以是小数。
+/// 输出以单个 `\n` 结尾（--raw 模式直接 print! 时末行有换行符）。
 pub fn ohlcv_to_csv(data: &[OhlcvRow]) -> String {
     let mut lines = Vec::new();
     lines.push("Date,Open,High,Low,Close,Volume".to_string());
@@ -72,7 +74,7 @@ pub fn ohlcv_to_csv(data: &[OhlcvRow]) -> String {
             row.date, row.open, row.high, row.low, row.close, row.volume
         ));
     }
-    lines.join("\n")
+    lines.join("\n") + "\n"
 }
 
 #[cfg(test)]
@@ -108,6 +110,8 @@ mod tests {
         let csv = ohlcv_to_csv(&data);
         assert!(csv.starts_with("Date,Open,High,Low,Close,Volume"));
         assert!(csv.contains("2024-01-01"));
+        // 末行应以换行结尾（L15：--raw 输出末尾是 0a 而非无换行符）
+        assert!(csv.ends_with('\n'));
     }
 
     #[test]

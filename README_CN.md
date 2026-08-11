@@ -53,7 +53,7 @@ bunx trad-skill@latest --dry-run           # 只打印安装计划，不写入
 
 ### 免安装直接使用数据工具
 
-同一个二进制还暴露 `stock` / `news` / `fundamentals` / `sentiment` 子命令。无需安装技能即可通过 `bunx`（或 `npx`）直接运行，适合一次性取数：
+同一个二进制还暴露 `stock` / `news` / `fundamentals` / `sentiment` / `fund` 子命令。无需安装技能即可通过 `bunx`（或 `npx`）直接运行，适合一次性取数：
 
 ```bash
 bunx trad-skill@latest stock --symbol AAPL
@@ -90,7 +90,7 @@ mkdir -p ~/.claude/skills/tradingagents-analysis/references/prompts
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/data-sources.md -o ~/.claude/skills/tradingagents-analysis/references/data-sources.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/indicators.md -o ~/.claude/skills/tradingagents-analysis/references/indicators.md
 curl -sL https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/README.md -o ~/.claude/skills/tradingagents-analysis/references/prompts/README.md
-for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst; do
+for f in market_analyst sentiment_analyst news_analyst fundamentals_analyst bull_researcher bear_researcher research_manager trader aggressive_risk conservative_risk neutral_risk portfolio_manager china_market_analyst cn_news_analyst fund_market_analyst fund_sentiment_analyst fund_news_analyst fund_fundamentals_analyst; do
   curl -sL "https://raw.githubusercontent.com/halfoffive/trad-skill/main/skills/tradingagents-analysis/references/prompts/${f}.md" -o ~/.claude/skills/tradingagents-analysis/references/prompts/${f}.md
 done
 ```
@@ -225,7 +225,7 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
     └── tradingagents-analysis/    # 可安装的技能
         ├── SKILL.md               # 核心技能指令文件
         └── references/
-            ├── prompts/               # 14个智能体角色提示词
+            ├── prompts/               # 18个智能体角色提示词
             │   ├── market_analyst.md       # 市场分析师
             │   ├── sentiment_analyst.md    # 情绪分析师
             │   ├── news_analyst.md         # 新闻分析师
@@ -240,6 +240,10 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
             │   ├── portfolio_manager.md    # 投资组合经理
             │   ├── china_market_analyst.md # 中国市场分析师
             │   ├── cn_news_analyst.md      # 中文新闻分析师
+            │   ├── fund_market_analyst.md       # 基金市场分析师
+            │   ├── fund_sentiment_analyst.md    # 基金情绪分析师
+            │   ├── fund_news_analyst.md         # 基金新闻分析师
+            │   ├── fund_fundamentals_analyst.md # 基金基本面分析师
             │   └── README.md               # 提示词索引
             ├── data-sources.md         # 数据源目录（美股+A股+港股）
             └── indicators.md           # 技术指标参考
@@ -269,13 +273,15 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
 | Baostock | A股历史数据 | 免费 |
 | 通达信 TDX | 技术指标 | 免费 |
 
+> 注意：Alpha Vantage、FRED、Polymarket、Tushare、Baostock 和 TDX 仅作为历史/出处参考列出；trad-skill 二进制直接使用 Yahoo Finance 与东方财富（Eastmoney）。详见 [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md) 了解实际接入的数据源与回退策略。
+
 详见 [references/data-sources.md](skills/tradingagents-analysis/references/data-sources.md)。
 
 ---
 
 ## 数据工具（`trad-skill`）
 
-数据通过 `trad-skill` Rust 二进制获取，提供行情数据（OHLCV + 指标）、新闻、基本面和情绪数据，输出为紧凑格式，适合 LLM 提示词注入。平台二进制以五个 `@trad-skill/<platform>` npm 包的形式分发（作为 optional dependencies 安装），极简 launcher `bin/trad-skill.js` 在运行时解析出当前平台对应的二进制；同一个二进制同时承载安装和数据子命令。
+数据通过 `trad-skill` Rust 二进制获取，提供行情数据（OHLCV + 指标）、新闻、基本面、情绪和基金数据，输出为紧凑格式，适合 LLM 提示词注入。平台二进制以五个 `@trad-skill/<platform>` npm 包的形式分发（作为 optional dependencies 安装），极简 launcher `bin/trad-skill.js` 在运行时解析出当前平台对应的二进制；同一个二进制同时承载安装和数据子命令。
 
 > 代理必须用技能安装目录内的**绝对路径**来运行 `trad-skill`（如 `~/.agents/skills/tradingagents-analysis/bin/<platform>/trad-skill`），因为子代理的工作目录是用户项目，而非技能文件夹。`SKILL.md` 已指示主代理在派生子代理前先解析该路径。
 

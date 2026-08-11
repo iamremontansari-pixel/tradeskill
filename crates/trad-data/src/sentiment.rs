@@ -379,7 +379,11 @@ fn format_org_participation_table(data: &[Value]) -> String {
             .map(|s| s.get(..10).unwrap_or(s))
             .unwrap_or("N/A");
 
-        // 机构参与度需乘以100转为百分比
+        // 机构参与度需乘以100转为百分比。
+        // 实测量标（2026-08-11 对 002594 RPT_DMSK_TS_STOCKEVALUATE 线上接口）：
+        // ORG_PARTICIPATE 返回 [0,1) 小数（0.39679 / 0.4476208 / 0.4510624 ...），
+        // 即 39.68% / 44.76% / 45.11% —— 必须 *100；不要改为"已含百分号"直接输出。
+        // 锁定此行为的单测：test_format_org_participation_table。
         let org_pct = row
             .get("ORG_PARTICIPATE")
             .and_then(|v| v.as_f64())
@@ -494,6 +498,39 @@ mod tests {
             lines[1]
         );
         assert_eq!(pipes(lines[0]), pipes(lines[1]), "分隔行管道符数应等于表头");
+    }
+
+    // 锁定 ORG_PARTICIPATE 缩放（实测量标 0.39679 → 39.68%，必须 *100）。
+    #[test]
+    fn test_format_org_participation_table() {
+        use serde_json::json;
+        // 实测量标数据（2026-08-11 002594）：ORG_PARTICIPATE 是 [0,1) 小数。
+        let data = vec![
+            json!({"TRADE_DATE": "2026-08-11 00:00:00", "ORG_PARTICIPATE": 0.39679}),
+            json!({"TRADE_DATE": "2026-08-10 00:00:00", "ORG_PARTICIPATE": 0.4476208}),
+            json!({"TRADE_DATE": "2026-08-05 00:00:00", "ORG_PARTICIPATE": 0.4109164}),
+        ];
+        let table = format_org_participation_table(&data);
+        assert!(
+            table.contains("39.68%"),
+            "0.39679 应显示为 39.68%: {}",
+            table
+        );
+        assert!(
+            table.contains("44.76%"),
+            "0.4476208 应显示为 44.76%: {}",
+            table
+        );
+        assert!(
+            table.contains("41.09%"),
+            "0.4109164 应显示为 41.09%: {}",
+            table
+        );
+        // 若误删 *100 会输出 0.40%——显式防回归
+        assert!(!table.contains("0.40%"), "小数不应原样输出: {}", table);
+        // 日期取前 10 字符
+        assert!(table.contains("2026-08-11"), "日期应保留: {}", table);
+        assert!(!table.contains("N/A"), "不应有 N/A: {}", table);
     }
 
     // A股情绪走东方财富，国内网络即可达。
