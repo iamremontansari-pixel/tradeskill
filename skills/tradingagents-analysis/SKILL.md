@@ -21,7 +21,7 @@ After installation, the skill will be available at one of these locations (check
 - `~/.config/opencode/skills/tradingagents-analysis` (OpenCode global)
 
 Data tool (Rust binary):
-  The same `trad-skill` binary powers both the installer and data fetching. It provides stock, fundamentals, news, and sentiment data for US stocks, China A-shares, HK stocks, and Crypto. Sentiment coverage: StockTwits/Reddit for US/Crypto, Eastmoney 千股千评/机构参与度 for A-shares; HK sentiment is not supported. If the bundled binary is missing, run any subcommand directly via `bunx trad-skill@latest <subcommand>` (e.g. `bunx trad-skill@latest stock --symbol AAPL`).
+  The same `trad-skill` binary powers both the installer and data fetching. It provides stock, fundamentals, news, sentiment, and fund data for US stocks, China A-shares, HK stocks, and Crypto. Sentiment coverage: StockTwits/Reddit for US/Crypto, Eastmoney 千股千评/机构参与度 for A-shares; HK sentiment is not supported. If the bundled binary is missing, run any subcommand directly via `bunx trad-skill@latest <subcommand>` (e.g. `bunx trad-skill@latest stock --symbol AAPL`).
 
 Verify installation by checking that `SKILL.md` and `references/` exist in the skill directory.
 
@@ -139,6 +139,7 @@ Locate the skill directory — it is typically one of:
 
 - `~/.claude/skills/tradingagents-analysis` (Claude Code, user-level)
 - `~/.agents/skills/tradingagents-analysis` (generic / OpenCode user-level)
+- `~/.config/opencode/skills/tradingagents-analysis` (OpenCode global)
 - `.claude/skills/tradingagents-analysis` or `.opencode/skills/tradingagents-analysis` (project-level)
 
 Set `SKILL_DIR` to that path and use it in every spawn. The platform binary lives at `{SKILL_DIR}/bin/<platform>/trad-skill[.exe]`, where `<platform>` is one of `win32-x64`, `win32-arm64`, `darwin-arm64`, `linux-x64`, `linux-arm64` (matching Node's `process.platform`-`process.arch`).
@@ -237,7 +238,7 @@ The `trad-skill` Rust binary lives in this skill's `bin/<platform>/` directory. 
 
 | Command | Purpose | Invocation |
 |---|---|---|
-| `trad-skill stock` | OHLCV **tail** (default 30 rows) + **pre-computed indicators** (SMA/EMA/MACD/RSI/Bollinger/ATR/VWMA/MFI) + optional stats. The Market Analyst **interprets** these pre-computed values (no manual arithmetic). (defaults when omitted: `--end` = today, `--start` = today − 365 days) | `trad-skill stock --symbol AAPL --start 2023-07-01 --end 2024-06-30 --tail 30 --stats` |
+| `trad-skill stock` | OHLCV **tail** (default 30 rows) + **pre-computed indicators** (SMA/EMA/MACD/RSI/Bollinger/ATR/VWMA/MFI) + optional stats. The Market Analyst **interprets** these pre-computed values (no manual arithmetic). (defaults when omitted: `--end` = today, `--start` = today − 365 days). Expand flags: `--stats`, `--raw`, `--source yahoo|eastmoney`, `--no-indicators`, `--no-stats`. | `trad-skill stock --symbol AAPL --start 2023-07-01 --end 2024-06-30 --tail 30 --stats` |
 | `trad-skill news` | Company news (US: Yahoo Finance + Google News RSS). Default `--limit 8` per source; all summaries truncated. | `trad-skill news --symbol AAPL --days 7 --limit 8` |
 | `trad-skill fundamentals` | **Compact key-metrics table** (revenue, net income, EPS, FCF, debt, margins, YoY) + company profile — instead of dumping full 4-year statements. | `trad-skill fundamentals --symbol AAPL` |
 | `trad-skill sentiment` | Social sentiment from StockTwits, Reddit. Default `--limit 15`, `--days 7` (Reddit window); message/post displays trimmed. | `trad-skill sentiment --symbol AAPL --limit 15 --days 7` |

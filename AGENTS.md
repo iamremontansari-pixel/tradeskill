@@ -41,13 +41,13 @@ bunx trad-skill@latest --dry-run        # print plan, write nothing
 
 Fallback (no `bun`): `npx trad-skill@latest` behaves identically.
 
-Data tool without installing: `bunx trad-skill@latest stock --symbol AAPL` (also `news` / `fundamentals` / `sentiment`). The same `trad-skill` binary handles both install and data subcommands.
+Data tool without installing: `bunx trad-skill@latest stock --symbol AAPL` (also `news` / `fundamentals` / `sentiment` / `fund`). The same `trad-skill` binary handles both install and data subcommands.
 
 Deprecated: the third-party `npx skills add halfoffive/trad-skill ...` flow (vercel-labs/skills) still works but is no longer recommended.
 
 ## Installer (`package.json` + `bin/trad-skill.js` + Rust binary)
 
-The installer logic is **Rust**, in `crates/trad-data/src/install.rs`. The compiled binary is named `trad-skill`; invoking it with no subcommand defaults to the install flow, and an explicit `install` subcommand is also accepted. The npm `trad-skill` bin entry is a thin CJS launcher (`bin/trad-skill.js`) that resolves the platform binary and execs it. Data subcommands (`stock`/`news`/`fundamentals`/`sentiment`) are passed through verbatim; for install mode (implicit or explicit `install`), the launcher injects `--skills-dir <pkgRoot>/skills/tradingagents-analysis` — the Rust binary's built-in default is a build-machine path and must never be used on user machines. A user-supplied `--skills-dir` wins over the injected one (clap self-override).
+The installer logic is **Rust**, in `crates/trad-data/src/install.rs`. The compiled binary is named `trad-skill`; invoking it with no subcommand defaults to the install flow, and an explicit `install` subcommand is also accepted. The npm `trad-skill` bin entry is a thin CJS launcher (`bin/trad-skill.js`) that resolves the platform binary and execs it. Data subcommands (`stock`/`news`/`fundamentals`/`sentiment`/`fund`) are passed through verbatim; for install mode (implicit or explicit `install`), the launcher injects `--skills-dir <pkgRoot>/skills/tradingagents-analysis` — the Rust binary's built-in default is a build-machine path and must never be used on user machines. A user-supplied `--skills-dir` wins over the injected one (clap self-override).
 
 - Copies `skills/tradingagents-analysis/` into the target agent's skills dir. **Default target: `~/.agents/skills`** (generic agent directory). Flags: `--dir <path>`, `--agent claude|agents|opencode` (mutually exclusive).
 - Copies the platform binary into `bin/<node-platform-key>/` via **self-copy** (`std::env::current_exe()`). `--bin-path` / `--no-bin` override. If the binary fails to copy and `--no-bin` was not given, the install exits non-zero.
@@ -66,7 +66,7 @@ Prompts and methodology are distilled from these. When updating prompts, re-extr
 ## Coding Standards
 
 ### Rust
-- All code must pass `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` before committing.
+- All code must pass `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test` before committing.
 - Use `anyhow` for error handling. No `unwrap()`/`expect()` in non-test code.
 - All HTTP clients must use `rustls-tls`. Never introduce `native-tls` or `openssl` (breaks cross-compilation).
 - No `cfg(target_os)` platform-specific code unless covering all 7 build targets.

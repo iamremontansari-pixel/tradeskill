@@ -4,7 +4,7 @@
 //! 负责解析平台二进制并 exec 本程序。
 //!
 //! 默认目标：`~/.agents/skills`（通用 agent 目录）。可用 `--agent claude|opencode` 或 `--dir` 覆盖。
-//! 无子命令时默认进入安装流程；`stock` / `news` / `fundamentals` / `sentiment` 是数据子命令。
+//! 无子命令时默认进入安装流程；`stock` / `news` / `fundamentals` / `sentiment` / `fund` 是数据子命令。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -413,6 +413,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
     println!("  bunx trad-skill@latest fundamentals --symbol AAPL");
     println!("  bunx trad-skill@latest news --symbol AAPL");
     println!("  bunx trad-skill@latest sentiment --symbol AAPL");
+    println!("  bunx trad-skill@latest fund --symbol 000001");
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "trad-skill",
   "version": "1.10.0",
-  "description": "Installable TradingAgents multi-agent stock-analysis skill + Rust data tool (bunx/npx; installer + stock/news/fundamentals/sentiment CLI)",
+  "description": "Installable TradingAgents multi-agent stock-analysis skill + Rust data tool (bunx/npx; installer + stock/news/fundamentals/sentiment/fund CLI)",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "git+https://github.com/halfoffive/trad-skill.git" },
   "homepage": "https://github.com/halfoffive/trad-skill",

@@ -53,7 +53,7 @@ bunx trad-skill@latest --dry-run           # 只打印安装计划，不写入
 
 ### 免安装直接使用数据工具
 
-同一个二进制还暴露 `stock` / `news` / `fundamentals` / `sentiment` 子命令。无需安装技能即可通过 `bunx`（或 `npx`）直接运行，适合一次性取数：
+同一个二进制还暴露 `stock` / `news` / `fundamentals` / `sentiment` / `fund` 子命令。无需安装技能即可通过 `bunx`（或 `npx`）直接运行，适合一次性取数：
 
 ```bash
 bunx trad-skill@latest stock --symbol AAPL
@@ -281,7 +281,7 @@ trad-skill/                        # 仓库根目录（元文件 + 安装器）
 
 ## 数据工具（`trad-skill`）
 
-数据通过 `trad-skill` Rust 二进制获取，提供行情数据（OHLCV + 指标）、新闻、基本面和情绪数据，输出为紧凑格式，适合 LLM 提示词注入。平台二进制以五个 `@trad-skill/<platform>` npm 包的形式分发（作为 optional dependencies 安装），极简 launcher `bin/trad-skill.js` 在运行时解析出当前平台对应的二进制；同一个二进制同时承载安装和数据子命令。
+数据通过 `trad-skill` Rust 二进制获取，提供行情数据（OHLCV + 指标）、新闻、基本面、情绪和基金数据，输出为紧凑格式，适合 LLM 提示词注入。平台二进制以五个 `@trad-skill/<platform>` npm 包的形式分发（作为 optional dependencies 安装），极简 launcher `bin/trad-skill.js` 在运行时解析出当前平台对应的二进制；同一个二进制同时承载安装和数据子命令。
 
 > 代理必须用技能安装目录内的**绝对路径**来运行 `trad-skill`（如 `~/.agents/skills/tradingagents-analysis/bin/<platform>/trad-skill`），因为子代理的工作目录是用户项目，而非技能文件夹。`SKILL.md` 已指示主代理在派生子代理前先解析该路径。
 

@@ -68,7 +68,7 @@ bunx trad-skill@latest stock --symbol AAPL
 - [ ] `SKILL.md §2` (the "ask for the ticker first" prerequisite) is preserved.
 - [ ] **Do not edit `CLAUDE.md`** — it is a pointer to `AGENTS.md`. Edit `AGENTS.md` instead.
 - [ ] If you touched the installer, verify `node_platform_key()` (install.rs) still matches the launcher's `@trad-skill/<key>` package resolution and the 5 npm package names, and `--dry-run` works.
-- [ ] If you changed the default install target or flags, update README, README_CN, SKILL.md §1, and AGENTS.md together.
+- [ ] If you changed the default install target or flags, update README, README_CN, SKILL.md 'For AI Agents: Installation Guide' section, and AGENTS.md together.
 
 ## Release procedure
 
