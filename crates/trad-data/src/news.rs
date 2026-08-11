@@ -69,7 +69,8 @@ fn strip_html(html: &str) -> String {
 }
 
 /// 解码常见 HTML 实体。`&` 后 15 个字符内无 `;` 视作字面 `&`。
-fn decode_html_entities(s: &str) -> String {
+/// `pub(crate)` 供 fund.rs 的 strip_tags 复用（公司名 `A &amp; B` → `A & B`）。
+pub(crate) fn decode_html_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -502,12 +503,15 @@ async fn fetch_eastmoney_news(
 }
 
 /// 剥离 JSONP 包装：jQuery...({...}) → {...}
+///
+/// 以 JSON 大括号锚定：取 `cb(` 之后的第一个 `{`（JSON 起点）与最后一个 `}`（JSON
+/// 终点），而非首 `(` / 末 `)`——JSON 字符串值内的括号（如 `"内容)"`）或 JSON
+/// 之后的附加参数（`, 42)`）会干扰括号定位，把垃圾卷进 JSON 导致解析失败。
 fn strip_jsonp(text: &str) -> String {
     let trimmed = text.trim();
-    // 找到第一个 '(' 和最后一个 ')'
-    if let (Some(start), Some(end)) = (trimmed.find('('), trimmed.rfind(')')) {
+    if let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) {
         if start < end {
-            return trimmed[start + 1..end].to_string();
+            return trimmed[start..=end].to_string();
         }
     }
     trimmed.to_string()
@@ -603,9 +607,21 @@ mod tests {
     #[test]
     fn test_strip_jsonp() {
         assert_eq!(strip_jsonp("jQuery({\"a\":1})"), "{\"a\":1}");
-        assert_eq!(strip_jsonp("callback(data)"), "data");
+        // 非 JSON 包装（无大括号）原样返回——JSONP 一定包 JSON 对象
+        assert_eq!(strip_jsonp("callback(data)"), "callback(data)");
         assert_eq!(strip_jsonp("noparens"), "noparens");
         assert_eq!(strip_jsonp(""), "");
+    }
+
+    #[test]
+    fn test_strip_jsonp_with_paren_in_content() {
+        // JSON 字符串值内含 `)`，且 JSONP 包装在 JSON 之后还有附加参数：
+        // 旧实现按首 `(` / 末 `)` 截取会把 `, 42)` 卷进 JSON，导致解析失败。
+        let input = r#"jQuery1123({"content":"(重磅) 今日要闻)"}, 42)"#;
+        assert_eq!(strip_jsonp(input), r#"{"content":"(重磅) 今日要闻)"}"#);
+        // 双括号收尾形态：旧实现 rfind(')') 命中最外层，把多出的 `)` 卷进 JSON
+        let double = r#"cb({"title":"value)"})"#;
+        assert_eq!(strip_jsonp(double), r#"{"title":"value)"}"#);
     }
 
     #[test]
