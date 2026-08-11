@@ -261,6 +261,28 @@ fn swap_dirs(tmp_dir: &Path, dest_dir: &Path, backup_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 清理父目录下历史 crash / PID 复用留下的 `.{SKILL_NAME}.old-*` / `.tmp-*`
+/// 残留目录（审计 M18）。最佳努力：任一目录删除失败仅打印提示，不阻断安装。
+fn clean_stale_dirs(parent_dir: &Path) {
+    let entries = match fs::read_dir(parent_dir) {
+        Ok(e) => e,
+        Err(_) => return, // 父目录不可读时跳过清理，不阻断安装
+    };
+    let old_prefix = format!(".{SKILL_NAME}.old-");
+    let tmp_prefix = format!(".{SKILL_NAME}.tmp-");
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let is_stale = (name.starts_with(&old_prefix) || name.starts_with(&tmp_prefix))
+            && entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        if is_stale {
+            if let Err(e) = fs::remove_dir_all(entry.path()) {
+                eprintln!("⚠ 清理残留目录失败：{}（{}）", entry.path().display(), e);
+            }
+        }
+    }
+}
+
 /// 安装入口
 pub fn run(args: InstallArgs) -> Result<()> {
     // 1. 解析源技能目录
@@ -329,6 +351,8 @@ pub fn run(args: InstallArgs) -> Result<()> {
     //      杀软锁、--bin-path 无效）时 dest_dir 都不动，上一次的可用安装完整保留。
     fs::create_dir_all(&parent_dir)
         .with_context(|| format!("创建父目录失败：{}", parent_dir.display()))?;
+    // M18: 清理历史 crash / PID 复用留下的 .old-* / .tmp-* 残留目录（最佳努力，失败不阻断）
+    clean_stale_dirs(&parent_dir);
     if dest_dir.exists() && !dest_dir.join("SKILL.md").is_file() {
         bail!(
             "目标目录已存在但不是本技能安装（缺少 SKILL.md）：{}。\n\
@@ -620,6 +644,34 @@ mod tests {
         assert!(dest.join("old-file.txt").exists());
         let backup_dir = target.join(format!(".{SKILL_NAME}.old-{}", std::process::id()));
         assert!(!backup_dir.exists(), "回滚后 backup 应已恢复回 dest");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn test_install_cleans_stale_tmp() {
+        // M18: 安装开始时清理历史 crash / PID 复用留下的 .old-* / .tmp-* 残留目录
+        let root = std::env::temp_dir().join("trad-skill-install-stale");
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::create_dir_all(&root).unwrap();
+        let src = make_skill_src(&root);
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        // 预置两个残留目录（模拟旧 crash / PID 复用），各含一个文件
+        let stale_old = target.join(format!(".{SKILL_NAME}.old-99999"));
+        let stale_tmp = target.join(format!(".{SKILL_NAME}.tmp-88888"));
+        for stale in [&stale_old, &stale_tmp] {
+            std::fs::create_dir_all(stale).unwrap();
+            std::fs::write(stale.join("junk.txt"), "stale").unwrap();
+        }
+        run(install_args(
+            target.to_str().unwrap(),
+            src.to_str().unwrap(),
+        ))
+        .unwrap();
+        // 残留目录被清理，安装本身成功
+        assert!(!stale_old.exists(), "残留 .old-* 目录应被清理");
+        assert!(!stale_tmp.exists(), "残留 .tmp-* 目录应被清理");
+        assert!(target.join(SKILL_NAME).join("SKILL.md").exists());
         std::fs::remove_dir_all(&root).ok();
     }
 
