@@ -158,7 +158,7 @@ pub async fn fetch_fund(
         fetch_fund_holdings(client, code),
         fetch_fund_performance(client, code),
     );
-    assemble_fund_report(code, tail, nav, profile, holdings, perf)
+    assemble_fund_report(code, tail, days, nav, profile, holdings, perf)
 }
 
 /// 将 4 个数据源的抓取结果组装为最终报告（与网络解耦，便于 mock 测试）。
@@ -169,6 +169,7 @@ pub async fn fetch_fund(
 fn assemble_fund_report(
     code: &str,
     tail: u32,
+    days: u32,
     nav: Result<Vec<NavRow>, String>,
     profile: Result<FundProfile, String>,
     holdings: Result<Vec<HoldingRow>, String>,
@@ -186,6 +187,7 @@ fn assemble_fund_report(
         holdings.as_deref().ok(),
         perf.as_deref().ok(),
         tail,
+        days,
     );
     let nav_usable = nav.as_ref().is_ok_and(|v| !v.is_empty());
     let profile_usable = profile.is_ok();
@@ -204,6 +206,7 @@ fn assemble_fund_report(
 ///
 /// 每个不可用的小节渲染 `> 该数据源暂不可用` 提示；NAV 表按 `tail` 截取最新
 /// N 行（接口返回已是最新在前）。只引用关键数字，不复刻原始 API 响应。
+#[allow(clippy::too_many_arguments)]
 fn build_fund_report(
     code: &str,
     fund_name: &str,
@@ -212,6 +215,7 @@ fn build_fund_report(
     holdings: Option<&[HoldingRow]>,
     perf_rows: Option<&[PerfRow]>,
     tail: u32,
+    days: u32,
 ) -> String {
     let mut sections = Vec::new();
     sections.push(format!("# {} {} 基金分析报告\n", code, fund_name));
@@ -222,7 +226,11 @@ fn build_fund_report(
         None => sections.push("> 该数据源暂不可用\n".to_string()),
     }
 
-    sections.push(format!("## 净值历史 (近 {} 日)\n", tail));
+    // 标题同时展示取数窗口（days）与展示行数（tail），避免把显示行数误当取数窗
+    sections.push(format!(
+        "## 净值历史 (近 {} 日, 显示最新 {} 条)\n",
+        days, tail
+    ));
     match nav_rows {
         Some(rows) if !rows.is_empty() => {
             let tail_n = tail as usize;
@@ -232,6 +240,11 @@ fn build_fund_report(
                 rows
             };
             sections.push(build_nav_table(shown));
+            // L20：lsjz 接口 pageSize 上限 200，days 大时请求可能被截断
+            sections.push(format!(
+                "> 注：东方财富 lsjz 接口 pageSize 上限 200，近 {} 日请求可能只返回最新 200 条 NAV（约 1 年交易日）。\n",
+                days
+            ));
         }
         _ => sections.push("> 该数据源暂不可用\n".to_string()),
     }
@@ -569,7 +582,9 @@ fn extract_blocks<'a>(html: &'a str, open: &str) -> Vec<&'a str> {
     blocks
 }
 
-/// 移除字符串中的 HTML 标签（如 `<a href="...">文本</a>` → `文本`）。
+/// 移除字符串中的 HTML 标签（如 `<a href="...">文本</a>` → `文本`），
+/// 并解码常见 HTML 实体（`&amp;` → `&`，复用 news.rs 的解码器；顺序上
+/// 先剥标签再解码，与 news.rs strip_html 一致）。
 fn strip_tags(s: &str) -> String {
     let mut out = String::new();
     let mut in_tag = false;
@@ -581,7 +596,7 @@ fn strip_tags(s: &str) -> String {
             _ => {}
         }
     }
-    out
+    crate::news::decode_html_entities(&out)
 }
 
 /// 解析百分比文本（"9.23%" → 9.23，"--" → 0.0）
@@ -843,6 +858,20 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_tags_decodes_entities() {
+        // HTML 实体应被解码（L18）：公司名 `A &amp; B` → `A & B`
+        assert_eq!(strip_tags("A &amp; B"), "A & B");
+        assert_eq!(
+            strip_tags("<a href='//fund.eastmoney.com/company/1.html'>华夏基金 &amp; 子公司</a>"),
+            "华夏基金 & 子公司"
+        );
+        // 数字实体同样解码
+        assert_eq!(strip_tags("it&#39;s &amp; that"), "it's & that");
+        // 字面 &（非实体）原样保留
+        assert_eq!(strip_tags("Tom & Jerry"), "Tom & Jerry");
+    }
+
+    #[test]
     fn test_report_format() {
         // 3 行 mock 净值，tail=2：验证标题 + 4 小节 + 每节一张表 + 尾部截断
         let report = build_fund_report(
@@ -853,16 +882,20 @@ mod tests {
             Some(&mock_holdings()),
             Some(&mock_perf()),
             2,
+            365,
         );
         assert!(report.contains("# 000001 华夏成长证券投资基金 基金分析报告"));
         for section in [
             "## 基金概况",
-            "## 净值历史 (近 2 日)",
+            "## 净值历史 (近 365 日, 显示最新 2 条)",
             "## 重仓股 (Top 10)",
             "## 业绩表现",
         ] {
             assert!(report.contains(section), "缺少小节 {}", section);
         }
+        // L20：pageSize 上限说明应出现在有 NAV 数据的报告中
+        assert!(report.contains("pageSize 上限 200"));
+        assert!(report.contains("近 365 日请求"));
         // 每节至少一张表
         assert!(report.contains("| 项目 | 内容 |"));
         assert!(report.contains("| 日期 | 单位净值 |"));
@@ -891,8 +924,11 @@ mod tests {
             Some(&mock_holdings()),
             Some(&mock_perf()),
             30,
+            365,
         );
-        assert!(report.contains("## 净值历史 (近 30 日)"));
+        assert!(report.contains("## 净值历史 (近 365 日, 显示最新 30 条)"));
+        // NAV 小节不可用时无 pageSize 说明（说明只随数据表出现）
+        assert!(!report.contains("pageSize 上限 200"));
         assert_eq!(report.matches("> 该数据源暂不可用").count(), 1);
         assert!(!report.contains("| 日期 | 单位净值 |"));
         assert!(report.contains("| 项目 | 内容 |"));
@@ -905,6 +941,7 @@ mod tests {
         let result = assemble_fund_report(
             "000001",
             30,
+            365,
             Err("净值失败".to_string()),
             Err("资料失败".to_string()),
             Err("重仓失败".to_string()),
@@ -921,6 +958,7 @@ mod tests {
         let result = assemble_fund_report(
             "999999",
             30,
+            365,
             Ok(Vec::new()),
             Err("资料失败".to_string()),
             Ok(Vec::new()),
@@ -936,6 +974,7 @@ mod tests {
         let result = assemble_fund_report(
             "000001",
             30,
+            365,
             Ok(mock_nav_rows()),
             Err("资料失败".to_string()),
             Ok(mock_holdings()),
