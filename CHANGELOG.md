@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.1] - 2026-08-11
+
+### Fixed
+
+- **HTTP 流式读取防 OOM（H1）**：`text_limited` / `json_limited` 弃用 `resp.bytes()` 全量读取，改为 `resp.chunk()` 流式累加并实时超限拒绝；新增公共 `bytes_limited()` 供 fund 复用。chunked 无 Content-Length 响应不再有内存耗尽风险（新增单元测试锁定）。
+- **fund body 复用字节上限（H2）**：`fetch_fund_body` 改走 `http::bytes_limited()`，删除 fund.rs 自有的重复 `MAX_BODY_BYTES` 常量与无界读取。
+- **installer 原子性（H3）**：bin 复制移到 swap 之前（先复制到 `tmp_dir/bin/<key>/`），bin 复制失败时 dest 不动、旧安装完整保留；backup 清理推迟到全部复制成功之后；新增 `test_install_bin_copy_failure_preserves_old` 与 `test_install_atomic_rollback`。
+- **manual install curl 循环缺 4 个基金 prompt（H4）**：README/README_CN 手动安装脚本补全 `fund_market_analyst` / `fund_sentiment_analyst` / `fund_news_analyst` / `fund_fundamentals_analyst` 四个文件。
+- **launcher install-token 过滤（M1）**：`bin/trad-skill.js` 丢弃 `install` token 时维护 `prevWasValueFlag` 状态（`--dir`/`--agent`/`--skills-dir`/`--bin-path` 后的 token 视为值不剥），`--agent claude install` 等形态不再重复路由 install。
+- **skill 文档矛盾（M5-M9）**：china_market_analyst Tushare→TDX 引用修正；news_analyst 去掉 Yahoo 新闻过度声明；GBK 编码说明修正；Tushare 标注 not-wired（数据源优先级修正）；fund prompt 幻影变量删除。
+- **Google News CDATA（M10）**：news 解析处理 `Event::CData`，description 不再被 `CDATA` 标签污染（测试锁定）。
+- **org-participation 缩放（M17）**：Reddit org-participation 计数修正为按组织名聚合缩放，不再虚高。
+- **残留目录清理（M18）**：install 启动时清理 `parent_dir` 下残留的 `.tradingagents-analysis.old-*` / `.tmp-*` 目录（最佳努力，失败不阻断）。
+- **Rust 健壮性（L13-L21）**：fund `--days` clamp 到 `[1,3650]`；CSV 输出末行补 trailing newline；`strip_jsonp` 以 JSON 大括号（而非括号）锚定剥离；Yahoo crumb 刷新改 `tokio::sync::Mutex` 串行化（消除 TOCTOU 竞态）；fund profile `strip_tags` 输出解码 HTML entities（`&amp;` → `&`）；净值段标题显示取数窗 `days` 而非显示数 `tail`；标注东方财富 lsjz 接口 pageSize 上限 200 的截断说明；`rolling_std` 由平方和增量法改 Welford 在线算法（消除大数 catastrophic cancellation）。
+
+### Changed (breaking)
+
+- **`--limit` 上限收紧（L14）**：news/sentiment 的 `--limit` 现在 clamp 到 `[1,1000]`，`>1000` 直接退出码 2（此前仅被 50MB 响应体上限兜底）；fund `--days` clamp 到 `[1,3650]`。
+- **CI build 并行化（L27）**：ci.yml build job 与 check job 并行（`check` 提前到 build 前），缩短 PR 反馈时间。
+
+### CI
+
+- **7-file version sync（M11）**：CI 新增 node 校验，断言 package.json / 5 个 npm manifest / Cargo.toml / 5 个 `@trad-skill/*` pin 与 package.json 版本一致。
+- **Windows test job（M12）**：新增 windows-latest `cargo test` + smoke 测试。
+- **musl 静态 pin + file 验证（M13）**：linux musl 目标显式 RUSTFLAGS 静态链接，并用 `file` 命令验证产物为 statically linked。
+- **CI/Release matrix parity 断言（M14）**：断言两个 workflow 的 7 平台矩阵一致。
+- **权限与超时（L26）**：workflow 权限收窄为只读 + `id-token: write` 仅 release 用；各 job 加 30 分钟 timeout。
+- **actions SHA pin（L29）**：全部第三方 actions 改为 SHA pin（供应链安全）。
+- **semver tag 触发（L34）**：release workflow 触发条件收窄为 `v*.*.*` 格式 tag。
+- **scoped id-token（L35）**：id-token 权限从 workflow 级收到 npm-publish job 级。
+- **release 校验强化（L31-L32）**：npm-publish 前校验 Cargo.lock 中 trad-data 版本与 tag 一致、CHANGELOG 含对应章节；`.gitignore` 覆盖已发布的 `npm/*/trad-skill[.exe]` 二进制。
+
+### Notes
+
+- **7-file version sync**：`package.json` `version` `1.10.0` -> `1.10.1`（+ 5 个 `optionalDependencies` `@trad-skill/*` pin）；`crates/trad-data/Cargo.toml` `version` -> `1.10.1`；5 个 `npm/<platform>/package.json` `version` -> `1.10.1`；`crates/trad-data/Cargo.lock` 同步至 `1.10.1`（`cargo build` 重新生成）。
+- **3 项 intentional skips**（L22/L24/L25，详见审计报告 Out of scope）：L22 sentiment US 全源失败 Ok exit 0（设计选择）；L24 Intel Mac 不支持（AGENTS.md 已声明 7-target）；L25 npm `libc` 字段缺失（musl 静态二进制当前在 glibc 可跑，缺 libc 是正确表达）。
+
 ## [1.10.0] - 2026-08-08
 
 ### Added
