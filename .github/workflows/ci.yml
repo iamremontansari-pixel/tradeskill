@@ -38,6 +38,87 @@ jobs:
         run: cargo test
         working-directory: crates/trad-data
 
+      - name: Verify 7-file version sync
+        run: |
+          node -e '
+            const fs = require("fs");
+            const mainPkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const version = mainPkg.version;
+            const files = [
+              "package.json",
+              ...fs.readdirSync("npm").map(d => `npm/${d}/package.json`),
+            ];
+            for (const f of files) {
+              const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
+              if (pkg.version !== version) {
+                console.error(`版本不一致: ${f} = ${pkg.version}，package.json = ${version}`);
+                process.exit(1);
+              }
+            }
+            const cargo = fs.readFileSync("crates/trad-data/Cargo.toml", "utf8");
+            const m = cargo.match(/^version\s*=\s*"([^"]+)"/m);
+            if (!m || m[1] !== version) {
+              console.error(`Cargo.toml 版本不一致: ${m ? m[1] : "未找到"}，package.json = ${version}`);
+              process.exit(1);
+            }
+            const pins = Object.entries(mainPkg.optionalDependencies || {}).filter(([k]) => k.startsWith("@trad-skill/"));
+            if (pins.length !== 5) {
+              console.error(`optionalDependencies @trad-skill/* 数量异常: ${pins.length} 个，期望 5 个`);
+              process.exit(1);
+            }
+            const badPins = pins.filter(([, v]) => v !== version);
+            if (badPins.length > 0) {
+              for (const [k, v] of badPins) {
+                console.error(`optionalDependencies 版本不一致: ${k} = ${v}，package.json = ${version}`);
+              }
+              process.exit(1);
+            }
+            console.log(`✓ ${files.length} 个 npm manifest + Cargo.toml + ${pins.length} 个 optionalDependencies pin 与 package.json v${version} 一致`);
+          '
+
+      - name: Assert CI/Release matrix parity
+        run: |
+          node -e '
+            const fs = require("fs");
+            const extract = (file) => {
+              const text = fs.readFileSync(file, "utf8");
+              const re = /^\s*-\s+target:\s*(\S+)\s*$/gm;
+              const targets = [];
+              let m;
+              while ((m = re.exec(text)) !== null) targets.push(m[1]);
+              return targets.sort();
+            };
+            const ci = extract(".github/workflows/ci.yml");
+            const release = extract(".github/workflows/release.yml");
+            if (ci.length !== release.length || ci.some((t, i) => t !== release[i])) {
+              console.error("CI/Release 构建矩阵不一致:");
+              console.error(`  ci.yml:      ${ci.join(", ")}`);
+              console.error(`  release.yml: ${release.join(", ")}`);
+              process.exit(1);
+            }
+            console.log(`✓ ci.yml 与 release.yml 构建矩阵一致 (${ci.length} 个 target)`);
+          '
+
+  windows-test:
+    name: Windows Test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/trad-data
+
+      # Runs the full test suite on a Windows host, exercising the
+      # install.rs USERPROFILE branch that ubuntu-only CI never covers
+      - name: Run tests
+        run: cargo test
+        working-directory: crates/trad-data
+
   build:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -91,12 +172,34 @@ jobs:
 
       - name: Build release binary (native)
         if: matrix.use-cross == false
+        env:
+          # musl targets must stay statically linked; pin crt-static so a cross
+          # toolchain default change cannot silently produce a glibc-dependent binary
+          RUSTFLAGS: ${{ contains(matrix.target, 'musl') && '-C target-feature=+crt-static' || '' }}
         run: cargo build --release --target ${{ matrix.target }}
         working-directory: crates/trad-data
 
       - name: Build release binary (cross)
         if: matrix.use-cross == true
+        env:
+          RUSTFLAGS: ${{ contains(matrix.target, 'musl') && '-C target-feature=+crt-static' || '' }}
         run: cross build --release --target ${{ matrix.target }}
+        working-directory: crates/trad-data
+
+      - name: Verify musl binary is statically linked
+        if: contains(matrix.target, 'musl')
+        run: |
+          file crates/trad-data/target/${{ matrix.target }}/release/trad-skill | grep -q "statically linked" || (echo "::error::musl binary not static" && exit 1)
+
+      # Native-runnable targets only (linux-gnu on ubuntu, windows on windows,
+      # darwin on macos); cross targets (aarch64-linux/musl, aarch64-windows)
+      # cannot execute without qemu, so they skip the smoke test.
+      - name: Smoke test (native target)
+        if: matrix.use-cross == false && matrix.target != 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          BIN="target/${{ matrix.target }}/release/trad-skill${{ contains(matrix.target, 'windows') && '.exe' || '' }}"
+          "$BIN" --version
         working-directory: crates/trad-data
 
       - name: Upload artifact (Unix)
