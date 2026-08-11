@@ -6,9 +6,6 @@
 
 use chrono::{Duration, Local};
 
-/// 响应体大小上限（与 http.rs 的 50 MB 防护一致）
-const MAX_BODY_BYTES: usize = 50 * 1024 * 1024;
-
 /// 单日净值行（FSRQ→date, DWJZ→unit_nav, LJJZ→acc_nav, JZZZL→growth_pct,
 /// SGZT→sub_status, SHZT→redempt_status）
 pub struct NavRow {
@@ -57,7 +54,7 @@ pub type PerfTable = Vec<PerfRow>;
 ///
 /// 2026-08-08 起东方财富基金接口实际已全部返回 UTF-8（响应头 charset=utf-8
 /// 属实）；此前曾返回 GBK 字节。优先严格 UTF-8 解码，失败再回退 GBK，
-/// 以兼容两种状态的边缘节点。大小上限沿用 http.rs 的 50 MB。
+/// 以兼容两种状态的边缘节点。大小上限沿用 http.rs 的 50 MB 流式防护。
 async fn fetch_fund_body(
     client: &reqwest::Client,
     url: &str,
@@ -71,17 +68,7 @@ async fn fetch_fund_body(
     )
     .await
     .map_err(|e| format!("东方财富 API 请求失败: {}", e))?;
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return Err(format!(
-            "响应体过大（{} 字节，上限 {}）",
-            bytes.len(),
-            MAX_BODY_BYTES
-        ));
-    }
+    let bytes = crate::http::bytes_limited(resp).await?;
     match std::str::from_utf8(&bytes) {
         Ok(s) => Ok(s.to_string()),
         Err(_) => {
