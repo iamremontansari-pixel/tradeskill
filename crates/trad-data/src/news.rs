@@ -325,6 +325,18 @@ fn parse_google_news_rss(xml: &str, query: &str, days: u32, limit: u32) -> Strin
                     _ => {}
                 }
             }
+            // Google News 把 <description> 包在 CDATA 里，quick-xml 产生 Event::CData。
+            // CDATA 内容是原始文本（实体不在此层转义，`&amp;`/`&nbsp;` 等由下游 strip_html
+            // 的 decode_html_entities 解码），直接按 UTF-8 取字节即可。
+            Ok(Event::CData(ref e)) => {
+                let text = String::from_utf8_lossy(e).into_owned();
+                match current_tag.as_str() {
+                    "title" => current_title.push_str(&text),
+                    "source" => current_source.push_str(&text),
+                    "description" => current_desc.push_str(&text),
+                    _ => {}
+                }
+            }
             Ok(Event::End(ref e)) => {
                 if e.name().as_ref() == b"item" {
                     in_item = false;
@@ -611,6 +623,53 @@ mod tests {
         assert!(item.contains("**Title**"));
         assert!(item.contains("Source"));
         assert!(item.contains("Summary text"));
+    }
+
+    // Google News RSS 的 <description> 包裹在 CDATA 中，quick-xml 产生 Event::CData 而非
+    // Event::Text。修复前 CDATA 内容被忽略、description 为空（summary 缺失）。
+    #[test]
+    fn test_parse_google_news_cdata_description() {
+        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Google News</title>
+<item>
+<title>Apple stock rises on earnings beat</title>
+<source url="https://www.example.com">Example News</source>
+<description><![CDATA[<a href="https://www.example.com/apple">Apple &amp; Google shares climbed</a>&nbsp;&nbsp;<font color="#6f6f6f">Example News</font>]]></description>
+<pubDate>Tue, 11 Aug 2026 10:00:00 GMT</pubDate>
+</item>
+</channel></rss>"##;
+        let out = parse_google_news_rss(xml, "AAPL", 7, 8);
+        // CDATA 内容应进入 description，剥标签 + 解码实体后含链接文本
+        assert!(
+            out.contains("Apple & Google shares climbed"),
+            "CDATA 描述应被解析: {}",
+            out
+        );
+        assert!(
+            out.contains("Apple stock rises on earnings beat"),
+            "标题应保留: {}",
+            out
+        );
+    }
+
+    // 非 CDATA 的纯文本 <description> 仍应可解析（回归保护）。
+    #[test]
+    fn test_parse_google_news_text_description() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Google News</title>
+<item>
+<title>Apple stock rises</title>
+<source url="https://www.example.com">Example News</source>
+<description>Apple shares climbed on strong earnings</description>
+</item>
+</channel></rss>"#;
+        let out = parse_google_news_rss(xml, "AAPL", 7, 8);
+        assert!(
+            out.contains("Apple shares climbed"),
+            "Text 描述应被解析: {}",
+            out
+        );
+        assert!(out.contains("Apple stock rises"), "标题应保留: {}", out);
     }
 
     #[test]
